@@ -1,0 +1,39 @@
+# Automation Configuration Template
+# Copy this file to settings.toml and fill in your API keys and paths
+
+[paths]
+# Absolute path to Obsidian vault
+vault_path = "C:\\Users\\Jeffr\\Documents\\Werkbestanden AI\\obsidian"
+
+[wikis]
+# Map topics to target wiki folders
+finance = "fin_wiki"
+code = "code_wiki"
+tools = "tools_wiki"
+other = "other_wiki"
+
+[api_keys]
+# API keys for research services
+# Get these from:
+# - Anthropic: https://console.anthropic.com/
+# - Perplexity: https://www.perplexity.ai/settings/api
+# - Tavily: https://tavily.com/
+
+anthropic_api_key = "your-anthropic-api-key-here"
+perplexity_api_key = "your-perplexity-api-key-here"
+tavily_api_key = "your-tavily-api-key-here"
+
+[services]
+# Which research services to enable
+enable_perplexity = true
+enable_tavily = true
+enable_claude = true
+enable_github = true
+
+# Perplexity model to use
+perplexity_model = "sonar"
+
+[logging]
+# Logging configuration
+log_level = "INFO"
+log_file = "automation.log"
