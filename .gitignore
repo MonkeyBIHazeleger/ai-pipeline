@@ -1,0 +1,19 @@
+# Automation scripts ignore rules
+# Configuration and secrets
+config/settings.toml
+config/*.local
+
+# Python virtual environment
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
