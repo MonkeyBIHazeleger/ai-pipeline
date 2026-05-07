@@ -20,7 +20,7 @@ import sys
 import os
 from pathlib import Path
 from datetime import datetime
-from urllib.parse import slugify
+import re
 
 try:
     import tomli
@@ -186,7 +186,8 @@ def save_research(topic, source, content, target_wiki, config, query=""):
         return False
 
     # Generate filename
-    slug = slugify(topic)[:50]  # Limit slug length
+    slug = re.sub(r'[^\w\s-]', '', topic).lower()
+    slug = re.sub(r'[-\s]+', '-', slug)[:50]
     date = datetime.now().strftime("%Y-%m-%d")
     filename = f"research-{slug}-{date}.md"
     filepath = raw_dir / filename

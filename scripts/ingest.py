@@ -14,6 +14,7 @@ Usage:
 import argparse
 import sys
 import re
+import os
 from pathlib import Path
 from datetime import datetime
 
@@ -87,7 +88,7 @@ def get_raw_files(vault_path, unprocessed_only=True):
 
     files = []
     for md_file in raw_dir.glob("research-*.md"):
-        content = md_file.read_text()
+        content = md_file.read_text(encoding='utf-8')
         fm, _ = parse_frontmatter(content)
 
         if unprocessed_only and fm.get("ingested") == "true":
@@ -98,87 +99,8 @@ def get_raw_files(vault_path, unprocessed_only=True):
     return files
 
 
-def structure_with_claude(topic, source, body, config):
-    """Call Claude API to structure raw research into wiki pages."""
-    try:
-        from anthropic import Anthropic
-    except ImportError:
-        print("  [!] anthropic library required")
-        return None
-
-    api_key = config["api_keys"].get("anthropic_api_key")
-    if not api_key or api_key.endswith("-here"):
-        print("  [!] Anthropic API key not configured")
-        return None
-
-    try:
-        client = Anthropic(api_key=api_key)
-
-        prompt = f"""You are a knowledge management assistant. Convert the following raw research into atomic wiki pages.
-
-SOURCE: {source}
-TOPIC: {topic}
-
-RAW RESEARCH:
-{body}
-
----
-
-Task: Structure this into 2-5 atomic wiki pages (250-500 words each). Each page should:
-- Focus on ONE concept or idea
-- Be standalone but link to others with [[wiki-links]]
-- Have a clear title (use as filename: lowercase, hyphens)
-- Include practical examples where relevant
-
-Format your response as:
-
-## Page: filename-slug
-Content here with [[links-to-other-pages]] where relevant.
-
-## Page: another-slug
-More content...
-
-Create pages that would be discoverable and useful in an organized wiki. Use simple language."""
-
-        message = client.messages.create(
-            model="claude-opus-4-7",
-            max_tokens=4000,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return message.content[0].text
-    except Exception as e:
-        print(f"  [!] Error calling Claude API: {e}")
-        return None
 
 
-def parse_claude_pages(claude_output):
-    """Parse Claude's structured output into page data."""
-    pages = []
-    current_page = None
-    current_content = []
-
-    for line in claude_output.split("\n"):
-        if line.startswith("## Page:"):
-            # Save previous page
-            if current_page:
-                pages.append({
-                    "filename": current_page,
-                    "content": "\n".join(current_content).strip()
-                })
-            # Start new page
-            current_page = line.replace("## Page:", "").strip()
-            current_content = []
-        elif current_page:
-            current_content.append(line)
-
-    # Save last page
-    if current_page:
-        pages.append({
-            "filename": current_page,
-            "content": "\n".join(current_content).strip()
-        })
-
-    return pages
 
 
 def create_wiki_page(wiki_dir, filename, content, source):
@@ -202,7 +124,7 @@ created: "{datetime.now().strftime('%Y-%m-%d')}"
 """
 
     try:
-        filepath.write_text(frontmatter)
+        filepath.write_text(frontmatter, encoding='utf-8')
         return True, filename
     except Exception as e:
         print(f"    [!] Error writing {filename}: {e}")
@@ -218,7 +140,7 @@ def update_wiki_index(wiki_dir, new_pages, topic):
         return False
 
     try:
-        content = index_path.read_text()
+        content = index_path.read_text(encoding='utf-8')
 
         # Add new pages to index (simple append before end)
         new_entries = "\n".join([f"- [[{page['filename'][:-3]}]] — " for page in new_pages])
@@ -228,7 +150,7 @@ def update_wiki_index(wiki_dir, new_pages, topic):
         lines.insert(-1, f"\n## Recently Added ({topic})")
         lines.insert(-1, new_entries)
 
-        index_path.write_text("\n".join(lines))
+        index_path.write_text("\n".join(lines), encoding='utf-8')
         return True
     except Exception as e:
         print(f"  [!] Error updating index: {e}")
@@ -244,14 +166,14 @@ def update_wiki_log(wiki_dir, new_pages, topic, source):
         return False
 
     try:
-        content = log_path.read_text()
+        content = log_path.read_text(encoding='utf-8')
 
         date = datetime.now().strftime("%Y-%m-%d")
         page_list = ", ".join([f"[[{p['filename'][:-3]}]]" for p in new_pages])
 
         entry = f"\n## {date}\n\n**Source**: {source}\n**Topic**: {topic}\n**Pages Created**: {page_list}\n"
 
-        log_path.write_text(content + entry)
+        log_path.write_text(content + entry, encoding='utf-8')
         return True
     except Exception as e:
         print(f"  [!] Error updating log: {e}")
@@ -259,15 +181,14 @@ def update_wiki_log(wiki_dir, new_pages, topic, source):
 
 
 def process_file(filepath, frontmatter, vault_path, config):
-    """Process a single raw file with Claude API."""
+    """Process a single raw file by saving to wiki (manual curation)."""
 
     target_wiki = frontmatter.get("target_wiki", "other_wiki")
     topic = frontmatter.get("topic", "Unknown")
     source = frontmatter.get("source", "unknown")
-    date = frontmatter.get("date", datetime.now().strftime("%Y-%m-%d"))
 
     # Read raw content
-    content = filepath.read_text()
+    content = filepath.read_text(encoding='utf-8')
     fm, body = parse_frontmatter(content)
 
     print(f"  [*] Topic: {topic}")
@@ -278,31 +199,21 @@ def process_file(filepath, frontmatter, vault_path, config):
         print(f"  [!] Wiki directory not found: {wiki_dir}")
         return False
 
-    # Call Claude to structure content
-    print(f"  [+] Structuring with Claude API...")
-    structured = structure_with_claude(topic, source, body, config)
+    # Create a single page from raw content
+    # Filename based on topic slug
+    slug = re.sub(r'[^\w\s-]', '', topic).lower()
+    slug = re.sub(r'[-\s]+', '-', slug)[:50]
+    filename = slug + ".md"
 
-    if not structured:
-        print(f"  [!] Failed to structure content")
+    print(f"  [+] Saving to wiki page: {filename}")
+    success, saved_filename = create_wiki_page(wiki_dir, filename, body, source)
+
+    if not success:
+        print(f"  [!] Failed to create wiki page")
         return False
 
-    # Parse Claude's output into pages
-    pages = parse_claude_pages(structured)
-    print(f"  [+] Created {len(pages)} page(s)")
-
-    # Write each page
-    created_pages = []
-    for page in pages:
-        success, filename = create_wiki_page(wiki_dir, page["filename"], page["content"], source)
-        if success:
-            print(f"    [+] {filename}")
-            created_pages.append({"filename": filename})
-        else:
-            print(f"    [!] Failed: {page['filename']}")
-
-    if not created_pages:
-        print(f"  [!] No pages created")
-        return False
+    print(f"    [+] {saved_filename}")
+    created_pages = [{"filename": saved_filename}]
 
     # Update index and log
     if not update_wiki_index(wiki_dir, created_pages, topic):
@@ -316,7 +227,7 @@ def process_file(filepath, frontmatter, vault_path, config):
     updated_content = frontmatter_to_yaml(fm) + "\n" + body
 
     try:
-        filepath.write_text(updated_content)
+        filepath.write_text(updated_content, encoding='utf-8')
         print(f"  [OK] Marked as ingested")
         return True
     except Exception as e:
